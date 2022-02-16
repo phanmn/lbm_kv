@@ -68,6 +68,7 @@
          match_key/3,
          match/3,
          match/4,
+         match/5,
          update/2,
          update/3,
          info/0]).
@@ -247,6 +248,19 @@ match(Table, KeySpec, ValueSpec, transaction) ->
 
 %%------------------------------------------------------------------------------
 %% @doc
+%% Retrieves the entries that match the given key and value spec from a table.
+%% Specifying `dirty' will issue a faster dirty select operation (no
+%% isolation/atomicity).
+%% @end
+%%------------------------------------------------------------------------------
+-spec match(table(), key(), value(), [term()], dirty | transaction) -> {ok, [{key(), value()}]} | {error, term()}.
+match(Table, KeySpec, ValueSpec, Guards, dirty) ->
+    dirty_m(Table, KeySpec, ValueSpec, Guards);
+match(Table, KeySpec, ValueSpec, Guards, transaction) ->
+    do(fun() -> strip_l(m(Table, KeySpec, ValueSpec, Guards, read)) end).
+
+%%------------------------------------------------------------------------------
+%% @doc
 %% Updates all mappings of a table. This function can be used to modify or
 %% delete random mappings.
 %%
@@ -382,6 +396,15 @@ dirty_m(Tab, KeySpec, ValueSpec) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Select every entry matching the given key and value spec from `Tab' in a
+%% dirty manner, no transaction required.
+%%------------------------------------------------------------------------------
+-spec dirty_m(table(), key(), value(), [term()]) -> [{key(), value()}] | {error, term()}.
+dirty_m(Tab, KeySpec, ValueSpec, Guards) ->
+    dirty(Tab, m_spec(KeySpec, ValueSpec, Guards), dirty_select).
+
+%%------------------------------------------------------------------------------
+%% @private
 %%------------------------------------------------------------------------------
 -spec dirty(table(), key(), dirty_read | dirty_select) ->
                    [{key(), value()}] | {error, term()}.
@@ -411,10 +434,27 @@ m(Tab, KeySpec, ValueSpec, Lock) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Read every entry matching the given key and value specs from `Tab', only
+%% allowed within transaction
+%% context.
+%%------------------------------------------------------------------------------
+-spec m(table(), key(), value(), [term()], read | write) -> [#lbm_kv{}].
+m(Tab, KeySpec, ValueSpec, Guards, Lock) ->
+    mnesia:select(Tab, m_spec(KeySpec, ValueSpec, Guards), Lock).
+
+%%------------------------------------------------------------------------------
+%% @private
 %%------------------------------------------------------------------------------
 -spec m_spec(key(), value()) -> [tuple()].
 m_spec(KeySpec, ValueSpec) ->
     [{#lbm_kv{key = KeySpec, val = ValueSpec, _ = '_'}, [], ['$_']}].
+
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+-spec m_spec(key(), value(), [term()]) -> [tuple()].
+m_spec(KeySpec, ValueSpec, Guards) ->
+    [{#lbm_kv{key = KeySpec, val = ValueSpec, _ = '_'}, Guards, ['$_']}].
 
 %%------------------------------------------------------------------------------
 %% @private
